@@ -105,8 +105,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // Add player to room
             await pbCollections.addPlayerToRoom(roomId, playerId, nickname);
             
+            // Get updated room data with the current player included
+            const updatedRoom = await pbCollections.getRoom(roomId);
+            
             elements.roomIdDisplay.textContent = roomId;
-            updatePlayersList(room.players);
+            updatePlayersList(updatedRoom.players);
             
             if (room.isGameStarted) {
                 startGame();
