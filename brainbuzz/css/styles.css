@@ -1,0 +1,168 @@
+/* General Styles */
+body {
+    background-color: #f5f5f5;
+    color: #333;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.screen {
+    display: none;
+}
+
+.screen.active {
+    display: block;
+}
+
+/* Header */
+header h1 {
+    color: #4a4ae3;
+    margin-bottom: 0;
+}
+
+/* Card Styling */
+.card {
+    border-radius: 12px;
+    border: none;
+    overflow: hidden;
+}
+
+/* Timer */
+.timer {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background-color: #6c757d;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+/* Question and Options */
+.question-text {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+}
+
+.options-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.option-btn {
+    padding: 15px;
+    border: 2px solid #dee2e6;
+    border-radius: 8px;
+    background-color: white;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.2s;
+    text-align: left;
+}
+
+.option-btn:hover {
+    border-color: #4a4ae3;
+    transform: translateY(-2px);
+}
+
+.option-btn.correct {
+    background-color: #28a745;
+    color: white;
+    border-color: #28a745;
+}
+
+.option-btn.incorrect {
+    background-color: #dc3545;
+    color: white;
+    border-color: #dc3545;
+}
+
+/* Player List and Leaderboard */
+.player-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+}
+
+.player-name {
+    font-weight: 500;
+}
+
+.player-score {
+    font-weight: 600;
+}
+
+.player-streak {
+    display: inline-block;
+    margin-left: 8px;
+    color: #fd7e14;
+}
+
+/* Winner Display */
+.winner-display {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #4a4ae3;
+    margin: 20px 0;
+}
+
+/* Animation Classes */
+.pulse {
+    animation: pulse 1s infinite;
+}
+
+.correct-answer {
+    animation: correctAnswer 1s;
+}
+
+.incorrect-answer {
+    animation: incorrectAnswer 1s;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes correctAnswer {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.1);
+        background-color: #28a745;
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes incorrectAnswer {
+    0% {
+        transform: scale(1);
+    }
+    25% {
+        transform: translateX(-5px);
+    }
+    50% {
+        transform: translateX(5px);
+    }
+    75% {
+        transform: translateX(-5px);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
