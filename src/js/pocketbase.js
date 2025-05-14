@@ -30,6 +30,48 @@ const sampleQuestions = [
     }
 ];
 
+// Add storage event listener for cross-window communication
+window.addEventListener('storage', (event) => {
+    console.log('Storage event triggered:', event.key, event.newValue);
+    
+    // Check if the event is related to a room update
+    if (event.key && event.key.startsWith('room_')) {
+        const roomId = event.key.replace('room_', '');
+        
+        try {
+            const roomData = JSON.parse(event.newValue);
+            console.log('Room data from storage event:', roomData);
+            
+            // If room data exists and it has players, dispatch appropriate events
+            if (roomData && roomData.players) {
+                console.log('Broadcasting playerJoined event with players:', roomData.players);
+                
+                // Dispatch playerJoined event
+                document.dispatchEvent(new CustomEvent('playerJoined', {
+                    detail: { 
+                        roomId, 
+                        players: roomData.players 
+                    }
+                }));
+                
+                // If game started, dispatch gameStarted event
+                if (roomData.isGameStarted) {
+                    const questions = JSON.parse(roomData.questions);
+                    const currentQuestion = questions[roomData.currentQuestionIndex];
+                    document.dispatchEvent(new CustomEvent('gameStarted', {
+                        detail: { 
+                            roomId, 
+                            currentQuestion: currentQuestion 
+                        }
+                    }));
+                }
+            }
+        } catch (error) {
+            console.error('Error processing storage event:', error);
+        }
+    }
+});
+
 // Generate a random room ID
 function generateRoomId() {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -63,7 +105,7 @@ const pbCollections = {
             localStorage.setItem(`room_${roomId}`, JSON.stringify(roomData));
             
             // Create initial player (host)
-            this.addPlayerToRoom(roomId, hostPlayerId, hostPlayerName);
+            await this.addPlayerToRoom(roomId, hostPlayerId, hostPlayerName);
             
             return roomId;
         } catch (error) {
@@ -75,6 +117,8 @@ const pbCollections = {
     // Add a player to a room
     async addPlayerToRoom(roomId, playerId, playerName) {
         try {
+            console.log(`Adding player ${playerName} (${playerId}) to room ${roomId}`);
+            
             const playerData = {
                 id: playerId,
                 name: playerName,
@@ -88,16 +132,28 @@ const pbCollections = {
             
             // For the POC, simulate with localStorage
             const roomKey = `room_${roomId}`;
-            const roomData = JSON.parse(localStorage.getItem(roomKey) || '{}');
+            let roomData = JSON.parse(localStorage.getItem(roomKey) || '{}');
+            
+            console.log('Current room data before adding player:', roomData);
             
             if (!roomData.players) {
                 roomData.players = [];
             }
             
-            roomData.players.push(playerData);
+            // Check if player with same ID already exists
+            const existingPlayerIndex = roomData.players.findIndex(p => p.id === playerId);
+            if (existingPlayerIndex >= 0) {
+                console.log('Player already exists in room, updating instead of adding');
+                roomData.players[existingPlayerIndex] = playerData;
+            } else {
+                roomData.players.push(playerData);
+            }
+            
+            console.log('Updated room data with new player:', roomData);
             localStorage.setItem(roomKey, JSON.stringify(roomData));
             
             // Trigger a "player joined" event
+            console.log('Broadcasting playerJoined event');
             document.dispatchEvent(new CustomEvent('playerJoined', { 
                 detail: { roomId, player: playerData, players: roomData.players }
             }));
@@ -234,20 +290,56 @@ const pbCollections = {
     // Get room data
     async getRoom(roomId) {
         try {
+            console.log(`Getting room data for room ${roomId}`);
+            
             // In a real implementation:
             // return await pb.collection('rooms').getOne(roomId);
             
             // For the POC:
             const roomKey = `room_${roomId}`;
-            const roomData = JSON.parse(localStorage.getItem(roomKey) || '{}');
+            let roomData = JSON.parse(localStorage.getItem(roomKey) || '{}');
             
+            console.log('Raw room data from localStorage:', roomData);
+            
+            // When joining a room, we should check if it exists, not create one automatically
             if (!roomData.roomId) {
-                throw new Error('Room not found');
+                console.log('Room not found in localStorage');
+                
+                // Return null or throw an error instead of creating a new room
+                throw new Error(`Room ${roomId} not found`);
             }
             
             return roomData;
         } catch (error) {
             console.error('Error getting room:', error);
+            throw error;
+        }
+    },
+    
+    // Create room if not exists - separate function for creating a room first time
+    async createRoomIfNotExists(roomId) {
+        try {
+            console.log(`Creating room if not exists: ${roomId}`);
+            const roomKey = `room_${roomId}`;
+            let roomData = JSON.parse(localStorage.getItem(roomKey) || '{}');
+            
+            if (!roomData.roomId) {
+                // Initialize a new room
+                roomData = {
+                    roomId: roomId,
+                    hostPlayerId: null,
+                    isGameStarted: false,
+                    currentQuestionIndex: 0,
+                    questions: JSON.stringify(getRandomQuestions(5)),
+                    players: []
+                };
+                localStorage.setItem(roomKey, JSON.stringify(roomData));
+                console.log('Created new room:', roomData);
+            }
+            
+            return roomData;
+        } catch (error) {
+            console.error('Error creating room if not exists:', error);
             throw error;
         }
     }

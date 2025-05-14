@@ -6,7 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
         players: [],
         timer: null,
         timerValue: 30,
-        isHost: false
+        isHost: false,
+        syncInterval: null
     };
 
     // DOM Elements
@@ -58,7 +59,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
+            // Generate player ID
             const playerId = generatePlayerId();
+            
+            // Set up current player
             gameState.currentPlayer = {
                 id: playerId,
                 name: nickname,
@@ -67,10 +71,20 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             gameState.isHost = true;
 
+            console.log('Creating new room as host...');
             const roomId = await pbCollections.createRoom(playerId, nickname);
-            gameState.currentRoom = roomId;
+            console.log(`Room created with ID: ${roomId}`);
             
+            gameState.currentRoom = roomId;
             elements.roomIdDisplay.textContent = roomId;
+            
+            // Get full room data and update UI
+            const room = await pbCollections.getRoom(roomId);
+            updatePlayersList(room.players);
+            
+            // Start polling for room updates to sync state across browsers
+            startRoomStateSyncing();
+            
             showScreen('lobby');
         } catch (error) {
             console.error('Error creating room:', error);
@@ -89,27 +103,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            // Check if room exists
-            const room = await pbCollections.getRoom(roomId);
-            
+            // Generate a player ID
             const playerId = generatePlayerId();
+            
+            // Set up current player in game state
             gameState.currentPlayer = {
                 id: playerId,
                 name: nickname,
                 score: 0,
                 streak: 0
             };
+            
+            // Try to get the existing room - this will throw an error if the room doesn't exist
+            let room = await pbCollections.getRoom(roomId);
+            
+            console.log('Successfully found room to join:', room);
+            
+            // If we get here, the room exists
             gameState.currentRoom = roomId;
-            gameState.isHost = (room.hostPlayerId === playerId);
-
+            gameState.isHost = false;
+            
             // Add player to room
             await pbCollections.addPlayerToRoom(roomId, playerId, nickname);
             
-            // Get updated room data with the current player included
-            const updatedRoom = await pbCollections.getRoom(roomId);
+            // Get the updated room data after adding the player
+            room = await pbCollections.getRoom(roomId);
             
+            // Display room ID and update player list
             elements.roomIdDisplay.textContent = roomId;
-            updatePlayersList(updatedRoom.players);
+            updatePlayersList(room.players);
+            
+            // Force refresh players list from localStorage
+            refreshPlayersFromStorage();
+            
+            // Start polling for room updates
+            startRoomStateSyncing();
             
             if (room.isGameStarted) {
                 startGame();
@@ -122,8 +150,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Directly refresh the players list from localStorage
+    function refreshPlayersFromStorage() {
+        if (gameState.currentRoom) {
+            const roomKey = `room_${gameState.currentRoom}`;
+            const roomDataStr = localStorage.getItem(roomKey);
+            
+            if (roomDataStr) {
+                try {
+                    const roomData = JSON.parse(roomDataStr);
+                    if (roomData && roomData.players) {
+                        updatePlayersList(roomData.players);
+                        console.log('Refreshed players from storage:', roomData.players);
+                    }
+                } catch (error) {
+                    console.error('Error parsing room data:', error);
+                }
+            }
+        }
+    }
+
     // Update the players list in the lobby and game
     function updatePlayersList(players) {
+        if (!players || !Array.isArray(players)) {
+            console.error('Invalid players list:', players);
+            return;
+        }
+        
+        console.log('Updating players list with:', players);
         gameState.players = players;
         
         // Update lobby players list
@@ -137,6 +191,9 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             elements.playersList.appendChild(li);
         });
+        
+        // Show/hide start button based on whether player is host
+        elements.startGameBtn.style.display = gameState.isHost ? 'block' : 'none';
         
         // Update game leaderboard
         updateLeaderboard();
@@ -183,8 +240,11 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             if (gameState.isHost) {
                 await pbCollections.startGame(gameState.currentRoom);
+            } else {
+                // For non-host players, just transition to game screen
+                // The actual game start will come through the gameStarted event
+                showScreen('game');
             }
-            showScreen('game');
         } catch (error) {
             console.error('Error starting game:', error);
             alert('Failed to start game. Please try again.');
@@ -293,6 +353,7 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.joinRoomBtn.addEventListener('click', joinRoom);
     elements.startGameBtn.addEventListener('click', startGame);
     elements.playAgainBtn.addEventListener('click', () => {
+        stopRoomStateSyncing();
         showScreen('welcome');
     });
 
@@ -320,4 +381,84 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Start with welcome screen
     showScreen('welcome');
+
+    // Start syncing room state across browser windows
+    function startRoomStateSyncing() {
+        console.log('Starting room state syncing');
+        
+        // Clear any existing sync interval
+        if (gameState.syncInterval) {
+            clearInterval(gameState.syncInterval);
+        }
+        
+        // Keep track of the last question index we've seen
+        let lastQuestionIndex = -1;
+        let lastPlayerCount = 0;
+        
+        // Initially refresh players from storage
+        refreshPlayersFromStorage();
+        
+        // Start checking for room updates regularly
+        gameState.syncInterval = setInterval(() => {
+            if (gameState.currentRoom) {
+                try {
+                    // Direct access to localStorage for more reliable sync
+                    const roomKey = `room_${gameState.currentRoom}`;
+                    const roomDataStr = localStorage.getItem(roomKey);
+                    
+                    if (roomDataStr) {
+                        const updatedRoom = JSON.parse(roomDataStr);
+                        console.log('Room sync check:', updatedRoom);
+                        
+                        // Update player list if number of players has changed
+                        if (updatedRoom.players && updatedRoom.players.length !== lastPlayerCount) {
+                            console.log('Player count changed, updating list');
+                            updatePlayersList(updatedRoom.players);
+                            lastPlayerCount = updatedRoom.players.length;
+                        }
+                        
+                        // Check if game was started by host from another window
+                        if (updatedRoom.isGameStarted && !screens.game.classList.contains('active')) {
+                            console.log('Game started in another window, updating UI');
+                            showScreen('game');
+                            // Get the first question
+                            const questions = JSON.parse(updatedRoom.questions);
+                            displayQuestion(questions[updatedRoom.currentQuestionIndex]);
+                            lastQuestionIndex = updatedRoom.currentQuestionIndex;
+                        }
+                        
+                        // Check if question has changed (for non-host players)
+                        if (updatedRoom.isGameStarted && 
+                            lastQuestionIndex !== -1 && 
+                            updatedRoom.currentQuestionIndex !== lastQuestionIndex) {
+                            
+                            console.log('Question changed, updating UI');
+                            
+                            // Question has changed, update UI
+                            const questions = JSON.parse(updatedRoom.questions);
+                            
+                            // Check for game over
+                            if (updatedRoom.isGameEnded) {
+                                showGameOver(updatedRoom.players);
+                            } else if (updatedRoom.currentQuestionIndex < questions.length) {
+                                displayQuestion(questions[updatedRoom.currentQuestionIndex]);
+                            }
+                            
+                            lastQuestionIndex = updatedRoom.currentQuestionIndex;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error syncing room state:', error);
+                }
+            }
+        }, 1000); // Check every second for faster updates
+    }
+    
+    // Stop syncing when game ends or player leaves
+    function stopRoomStateSyncing() {
+        if (gameState.syncInterval) {
+            clearInterval(gameState.syncInterval);
+            gameState.syncInterval = null;
+        }
+    }
 });
